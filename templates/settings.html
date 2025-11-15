@@ -130,15 +130,8 @@
                                       placeholder="粘贴完整的 curl 命令..."></textarea>
                             <div class="form-text">从浏览器开发者工具复制许可证查询的 curl 命令</div>
                         </div>
-                        <hr class="my-4">
-                        <h6 class="mb-3">用户创建配置（可选）</h6>
-                        <div class="mb-3">
-                            <label for="addUserCreateCurl" class="form-label">创建用户的 Curl 命令</label>
-                            <textarea class="form-control" id="addUserCreateCurl" rows="10" 
-                                      placeholder="粘贴创建用户的完整 curl 命令..."></textarea>
-                            <div class="form-text">
-                                从浏览器开发者工具复制创建用户请求的 curl 命令
-                            </div>
+                        <div class="alert alert-info mt-3">
+                            <strong>💡 提示：</strong>系统会自动从许可证 Cookie 生成用户创建配置，无需手动配置！
                         </div>
                     </form>
                 </div>
@@ -175,15 +168,8 @@
                             <textarea class="form-control" id="editCurlCommand" rows="10" required></textarea>
                             <div class="form-text">从浏览器开发者工具复制许可证查询的 curl 命令</div>
                         </div>
-                        <hr class="my-4">
-                        <h6 class="mb-3">用户创建配置（可选）</h6>
-                        <div class="mb-3">
-                            <label for="editUserCreateCurl" class="form-label">创建用户的 Curl 命令</label>
-                            <textarea class="form-control" id="editUserCreateCurl" rows="10" 
-                                      placeholder="粘贴创建用户的完整 curl 命令..."></textarea>
-                            <div class="form-text">
-                                从浏览器开发者工具复制创建用户请求的 curl 命令
-                            </div>
+                        <div class="alert alert-info mt-3">
+                            <strong>💡 提示：</strong>更新许可证 Cookie 后，系统会自动同步更新用户创建配置！
                         </div>
                     </form>
                 </div>
@@ -420,7 +406,6 @@
             const name = document.getElementById('addName').value;
             const curlCommand = document.getElementById('addCurlCommand').value;
             const order = document.getElementById('addOrder').value;
-            const userCreateCurl = document.getElementById('addUserCreateCurl').value;
 
             if (!name || !curlCommand) {
                 alert('请填写所有必填项');
@@ -434,10 +419,6 @@
 
             if (order) {
                 payload.order = parseInt(order);
-            }
-
-            if (userCreateCurl) {
-                payload.user_create_curl = userCreateCurl;
             }
 
             fetch('/api/subscriptions', {
@@ -475,7 +456,6 @@
                             document.getElementById('editName').value = sub.name;
                             const curlCommand = `curl '${sub.api_url}' -H 'accept: application/json' -b '${sub.cookies}'`;
                             document.getElementById('editCurlCommand').value = curlCommand;
-                            document.getElementById('editUserCreateCurl').value = sub.user_create_curl || '';
                             editModal.show();
                         }
                     }
@@ -487,7 +467,6 @@
             const order = document.getElementById('editOrder').value;
             const name = document.getElementById('editName').value;
             const curlCommand = document.getElementById('editCurlCommand').value;
-            const userCreateCurl = document.getElementById('editUserCreateCurl').value;
 
             if (!name || !curlCommand || !order) {
                 alert('请填写所有必填项');
@@ -499,10 +478,6 @@
                 name: name,
                 curl_command: curlCommand
             };
-
-            if (userCreateCurl) {
-                payload.user_create_curl = userCreateCurl;
-            }
 
             fetch(`/api/subscriptions/${id}`, {
                 method: 'PUT',

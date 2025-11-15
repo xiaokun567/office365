@@ -157,9 +157,56 @@ class ConfigManager:
         
         return result
     
+    def generate_user_create_config(self, cookies: str) -> Dict:
+        """从许可证查询的 Cookie 自动生成用户创建配置"""
+        # 从 Cookie 中提取 ajaxsessionkey
+        ajaxsessionkey = ''
+        ajax_match = re.search(r's\.AjaxSessionKey=([^;]+)', cookies)
+        if ajax_match:
+            # URL 解码
+            import urllib.parse
+            ajaxsessionkey = urllib.parse.unquote(ajax_match.group(1))
+        
+        # 构建用户创建配置
+        user_create_config = {
+            'api_url': 'https://admin.cloud.microsoft/admin/api/users',
+            'headers': {
+                'accept': 'application/json, text/plain, */*',
+                'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'ajaxsessionkey': ajaxsessionkey,
+                'content-type': 'application/json',
+                'origin': 'https://admin.cloud.microsoft',
+                'priority': 'u=1, i',
+                'referer': 'https://admin.cloud.microsoft/?',
+                'sec-ch-ua': '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"macOS"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin',
+                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+                'x-adminapp-request': '/users/:/adduser',
+                'x-ms-mac-appid': '1f5f6b98-4e5f-486f-a0af-099e5eeb474f',
+                'x-ms-mac-hostingapp': 'M365AdminPortal',
+                'x-ms-mac-target-app': 'MAC',
+                'x-ms-mac-version': 'host-mac_2025.11.6.2'
+            },
+            'cookies': cookies
+        }
+        
+        return user_create_config
+    
     def add_subscription(self, name: str, curl_command: str, order: Optional[int] = None, 
-                        user_create_curl: Optional[str] = None) -> Dict:
-        """添加新订阅"""
+                        user_create_curl: Optional[str] = None, auto_generate_user_config: bool = True) -> Dict:
+        """添加新订阅
+        
+        Args:
+            name: 订阅名称
+            curl_command: 许可证查询的 curl 命令
+            order: 编号（可选）
+            user_create_curl: 用户创建的 curl 命令（可选）
+            auto_generate_user_config: 是否自动生成用户创建配置（默认 True）
+        """
         parsed = self.parse_curl_command(curl_command)
         
         # 从 URL 中提取 subscription_id
@@ -195,6 +242,10 @@ class ConfigManager:
                 'cookies': user_create_parsed['cookies']
             }
             subscription['user_create_curl'] = user_create_curl
+        elif auto_generate_user_config and parsed['cookies']:
+            # 自动生成用户创建配置
+            subscription['user_create_config'] = self.generate_user_create_config(parsed['cookies'])
+            print(f"✅ 已自动生成用户创建配置（订阅：{name}）")
         
         self.config['subscriptions'].append(subscription)
         # 按编号排序
@@ -217,6 +268,24 @@ class ConfigManager:
                     id_match = re.search(r'id=([a-f0-9\-]+)', parsed['url'])
                     if id_match:
                         sub['subscription_id'] = id_match.group(1)
+                    
+                    # 自动生成或更新用户创建配置（迁移旧格式）
+                    if parsed['cookies']:
+                        had_old_curl = 'user_create_curl' in sub
+                        had_config = 'user_create_config' in sub
+                        
+                        # 删除旧的手动配置标记，统一使用自动生成
+                        if had_old_curl:
+                            sub.pop('user_create_curl', None)
+                            print(f"🔄 已将订阅 {sub['name']} 迁移到自动生成模式")
+                        
+                        # 自动生成/更新用户创建配置
+                        sub['user_create_config'] = self.generate_user_create_config(parsed['cookies'])
+                        
+                        if not had_config and not had_old_curl:
+                            print(f"✅ 已自动生成用户创建配置（订阅：{sub['name']}）")
+                        elif had_config or had_old_curl:
+                            print(f"✅ 已自动更新用户创建配置的 Cookie（订阅：{sub['name']}）")
                 
                 # 更新名称
                 if 'name' in data:
