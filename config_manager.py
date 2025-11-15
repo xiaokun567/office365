@@ -21,7 +21,8 @@ class ConfigManager:
                 "webhook_json": "",
                 "expiration_warning_days": 30
             },
-            "login_password": "xiaokun567"
+            "login_password": "xiaokun567",
+            "check_interval_hours": 12
         }
         
         try:
@@ -54,6 +55,9 @@ class ConfigManager:
                 
                 if 'login_password' not in config:
                     config['login_password'] = "xiaokun567"
+                
+                if 'check_interval_hours' not in config:
+                    config['check_interval_hours'] = 12
                 
                 # 保存修复后的配置
                 self.save_config(config)
@@ -278,7 +282,7 @@ class ConfigManager:
                 return sub
         return None
     
-    def update_subscription_status(self, sub_id: str, status: str, data: Optional[Dict] = None) -> None:
+    def update_subscription_status(self, sub_id: str, status: str, data: Optional[Dict] = None, error_type: Optional[str] = None) -> None:
         """更新订阅状态"""
         for sub in self.config['subscriptions']:
             if sub['id'] == sub_id:
@@ -286,6 +290,12 @@ class ConfigManager:
                 sub['last_check_time'] = datetime.now().isoformat()
                 if data:
                     sub['subscription_data'] = data
+                # 保存错误类型（如果有）
+                if error_type:
+                    sub['error_type'] = error_type
+                elif 'error_type' in sub:
+                    # 如果检测成功，清除之前的错误类型
+                    del sub['error_type']
                 self.save_config()
                 break
     
@@ -317,4 +327,13 @@ class ConfigManager:
     def update_login_password(self, new_password: str) -> None:
         """更新登录密码"""
         self.config['login_password'] = new_password
+        self.save_config()
+    
+    def get_check_interval_hours(self) -> int:
+        """获取检测间隔（小时）"""
+        return self.config.get('check_interval_hours', 12)
+    
+    def update_check_interval_hours(self, hours: int) -> None:
+        """更新检测间隔（小时）"""
+        self.config['check_interval_hours'] = hours
         self.save_config()

@@ -51,7 +51,8 @@ class SubscriptionChecker:
                 self.config_manager.update_subscription_status(
                     subscription_id, 
                     'error',
-                    None
+                    None,
+                    'auth_failure'
                 )
                 return {
                     'success': False,
@@ -63,7 +64,8 @@ class SubscriptionChecker:
                 self.config_manager.update_subscription_status(
                     subscription_id,
                     'error',
-                    None
+                    None,
+                    'api_error'
                 )
                 return {
                     'success': False,
@@ -92,18 +94,36 @@ class SubscriptionChecker:
             }
             
         except requests.exceptions.Timeout:
+            self.config_manager.update_subscription_status(
+                subscription_id,
+                'error',
+                None,
+                'timeout'
+            )
             return {
                 'success': False,
                 'error': 'timeout',
                 'message': '请求超时'
             }
         except requests.exceptions.RequestException as e:
+            self.config_manager.update_subscription_status(
+                subscription_id,
+                'error',
+                None,
+                'network_error'
+            )
             return {
                 'success': False,
                 'error': 'network_error',
                 'message': f'网络错误: {str(e)}'
             }
         except Exception as e:
+            self.config_manager.update_subscription_status(
+                subscription_id,
+                'error',
+                None,
+                'unknown_error'
+            )
             return {
                 'success': False,
                 'error': 'unknown_error',

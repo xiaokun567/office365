@@ -437,6 +437,53 @@ def test_webhook():
         }), 500
 
 
+@app.route('/api/check-interval', methods=['GET'])
+@login_required
+def get_check_interval():
+    """获取检测间隔"""
+    interval = config_manager.get_check_interval_hours()
+    return jsonify({
+        'success': True,
+        'data': {
+            'check_interval_hours': interval
+        }
+    })
+
+
+@app.route('/api/check-interval', methods=['POST'])
+@login_required
+def update_check_interval():
+    """更新检测间隔"""
+    data = request.json
+    hours = data.get('check_interval_hours', 12)
+    
+    try:
+        hours = int(hours)
+        if hours < 1 or hours > 168:  # 1小时到7天
+            return jsonify({
+                'success': False,
+                'error': '检测间隔必须在 1-168 小时之间'
+            }), 400
+    except (ValueError, TypeError):
+        return jsonify({
+            'success': False,
+            'error': '无效的小时数'
+        }), 400
+    
+    config_manager.update_check_interval_hours(hours)
+    
+    # 重启定时任务
+    global scheduler
+    scheduler.stop()
+    scheduler = TaskScheduler(checker, config_manager, notifier)
+    scheduler.start()
+    
+    return jsonify({
+        'success': True,
+        'message': f'检测间隔已更新为 {hours} 小时'
+    })
+
+
 if __name__ == '__main__':
     print("Office 365 订阅监控系统启动中...")
     print("访问地址: http://localhost:5000")

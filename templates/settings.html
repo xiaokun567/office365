@@ -28,8 +28,24 @@
     </nav>
 
     <div class="container mt-4">
+        <!-- 订阅管理部分 -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>📋 订阅管理</h2>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+                ➕ 添加订阅
+            </button>
+        </div>
+
+        <div id="subscriptionsList" class="row">
+            <!-- 订阅列表将在这里动态生成 -->
+        </div>
+
+        <div id="emptyState" class="text-center py-5" style="display: none;">
+            <p class="text-muted">暂无订阅项，点击上方按钮添加</p>
+        </div>
+
         <!-- Webhook 通知配置 -->
-        <div class="card mb-4">
+        <div class="card mb-4 mt-5">
             <div class="card-header bg-primary text-white">
                 <h5 class="mb-0">🔔 Webhook 通知配置</h5>
             </div>
@@ -59,6 +75,14 @@
                             当订阅剩余天数少于或等于此天数时，将发送到期提醒通知（默认30天）
                         </div>
                     </div>
+                    <div class="mb-3">
+                        <label for="checkIntervalHours" class="form-label">自动检测间隔（小时）</label>
+                        <input type="number" class="form-control" id="checkIntervalHours" 
+                               min="1" max="168" value="12">
+                        <div class="form-text">
+                            系统自动检测订阅状态的时间间隔，范围 1-168 小时（默认12小时）
+                        </div>
+                    </div>
                     <div class="alert alert-info">
                         <strong>💡 通知触发条件：</strong>
                         <ul class="mb-0">
@@ -76,22 +100,6 @@
                     </button>
                 </form>
             </div>
-        </div>
-
-        <!-- 订阅管理部分 -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>📋 订阅管理</h2>
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
-                ➕ 添加订阅
-            </button>
-        </div>
-
-        <div id="subscriptionsList" class="row">
-            <!-- 订阅列表将在这里动态生成 -->
-        </div>
-
-        <div id="emptyState" class="text-center py-5" style="display: none;">
-            <p class="text-muted">暂无订阅项，点击上方按钮添加</p>
         </div>
     </div>
 
@@ -212,19 +220,39 @@
                 .catch(error => {
                     console.error('加载 Webhook 配置失败:', error);
                 });
+            
+            // 加载检测间隔
+            fetch('/api/check-interval')
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        document.getElementById('checkIntervalHours').value = result.data.check_interval_hours || 12;
+                    }
+                })
+                .catch(error => {
+                    console.error('加载检测间隔失败:', error);
+                });
         }
 
         function saveWebhookConfig() {
             const webhookUrl = document.getElementById('webhookUrl').value.trim();
             const webhookJson = document.getElementById('webhookJson').value.trim();
             const expirationWarningDays = parseInt(document.getElementById('expirationWarningDays').value) || 30;
+            const checkIntervalHours = parseInt(document.getElementById('checkIntervalHours').value) || 12;
 
             // 验证天数
             if (expirationWarningDays < 1 || expirationWarningDays > 365) {
                 alert('❌ 到期提醒天数必须在 1-365 之间');
                 return;
             }
+            
+            // 验证检测间隔
+            if (checkIntervalHours < 1 || checkIntervalHours > 168) {
+                alert('❌ 检测间隔必须在 1-168 小时之间');
+                return;
+            }
 
+            // 保存 Webhook 配置
             fetch('/api/webhook-config', {
                 method: 'POST',
                 headers: {
@@ -238,10 +266,27 @@
             })
             .then(response => response.json())
             .then(result => {
+                if (!result.success) {
+                    throw new Error(result.error || '保存 Webhook 配置失败');
+                }
+                
+                // 保存检测间隔
+                return fetch('/api/check-interval', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        check_interval_hours: checkIntervalHours
+                    })
+                });
+            })
+            .then(response => response.json())
+            .then(result => {
                 if (result.success) {
-                    alert('✅ Webhook 配置已保存！');
+                    alert('✅ 配置已保存！\n\n检测间隔将在下次检测时生效。');
                 } else {
-                    alert('❌ 保存失败: ' + result.error);
+                    alert('❌ 保存检测间隔失败: ' + result.error);
                 }
             })
             .catch(error => {

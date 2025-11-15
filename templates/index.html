@@ -263,6 +263,24 @@
         </div>
     </div>
 
+    <!-- 通用通知模态框 -->
+    <div class="modal fade" id="notificationModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header" id="notificationHeader">
+                    <h5 class="modal-title" id="notificationTitle">通知</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="notificationBody">
+                    <!-- 通知内容 -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 创建用户结果模态框 -->
     <div class="modal fade" id="userResultModal" tabindex="-1">
         <div class="modal-dialog">
@@ -368,6 +386,7 @@
         function createSubscriptionCard(sub) {
             const data = sub.subscription_data || {};
             const status = sub.status || 'unknown';
+            const errorType = sub.error_type || '';
             const daysRemaining = sub.days_remaining || 0;
             const usagePercentage = sub.usage_percentage || 0;
             
@@ -385,9 +404,16 @@
                 statusText = '失效';
                 statusBadge = 'bg-danger';
             } else if (status === 'error') {
-                statusIcon = '⚠️';
-                statusText = '错误';
-                statusBadge = 'bg-warning';
+                // 根据错误类型显示不同的状态
+                if (errorType === 'auth_failure' || errorType === 'network_error' || errorType === 'timeout') {
+                    statusIcon = '🔑';
+                    statusText = 'Cookie 过期';
+                    statusBadge = 'bg-danger';
+                } else {
+                    statusIcon = '⚠️';
+                    statusText = '错误';
+                    statusBadge = 'bg-warning';
+                }
             }
 
             // 使用率颜色
@@ -552,34 +578,192 @@
             fetch(`/api/subscriptions/${subId}/check`, {
                 method: 'POST'
             })
-            .then(response => response.json())
+            .then(response => {
+                // 先检查状态码
+                if (response.status === 400) {
+                    // 尝试解析 JSON，如果失败说明 Cookie 过期
+                    return response.text().then(text => {
+                        try {
+                            const result = JSON.parse(text);
+                            return { success: false, isCookieExpired: true, error: result.error || result.message || 'Cookie 已过期' };
+                        } catch (e) {
+                            return { success: false, isCookieExpired: true, error: 'Cookie 已过期，请更新' };
+                        }
+                    });
+                }
+                return response.json();
+            })
             .then(result => {
                 btn.disabled = false;
-                btn.textContent = '检测';
+                btn.textContent = '🔍 检测';
                 
                 if (result.success) {
-                    alert('检测完成！');
+                    showNotification('检测完成', '订阅状态已更新', 'success');
                     loadSubscriptions();
                 } else {
-                    alert('检测失败: ' + (result.message || result.error));
+                    const errorMsg = result.isCookieExpired 
+                        ? `🔑 ${result.error}\n\n请前往设置页面更新此订阅的 Cookie`
+                        : result.message || result.error;
+                    showNotification('检测失败', errorMsg, 'danger');
                 }
             })
             .catch(error => {
                 btn.disabled = false;
-                btn.textContent = '检测';
-                alert('检测失败: ' + error.message);
+                btn.textContent = '🔍 检测';
+                // 网络错误也可能是 Cookie 过期导致的
+                const errorMsg = error.message.includes('Expecting value') || error.message.includes('JSON')
+                    ? '🔑 Cookie 已过期或无效\n\n请前往设置页面更新此订阅的 Cookie'
+                    : `网络错误: ${error.message}`;
+                showNotification('检测失败', errorMsg, 'danger');
             });
         }
 
         function refreshAll() {
             const icon = document.getElementById('refreshIcon');
+            const btn = event.target.closest('button');
+            const originalText = btn.innerHTML;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>检测中...';
             icon.style.animation = 'spin 1s linear infinite';
             
-            loadSubscriptions();
-            
-            setTimeout(() => {
+            // 获取所有订阅
+            fetch('/api/subscriptions')
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success && result.data.length > 0) {
+                        // 逐个检测订阅，传入结果收集对象
+                        checkSubscriptionsSequentially(result.data, 0, btn, originalText, icon, {
+                            success: [],
+                            failed: []
+                        });
+                    } else {
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                        icon.style.animation = '';
+                        showNotification('提示', '暂无订阅需要检测', 'info');
+                    }
+                })
+                .catch(error => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                    icon.style.animation = '';
+                    showNotification('错误', '获取订阅列表失败: ' + error.message, 'danger');
+                });
+        }
+        
+        function checkSubscriptionsSequentially(subscriptions, index, btn, originalText, icon, results) {
+            if (index >= subscriptions.length) {
+                // 所有订阅检测完成
+                btn.disabled = false;
+                btn.innerHTML = originalText;
                 icon.style.animation = '';
-            }, 1000);
+                loadSubscriptions();
+                
+                // 生成结果消息
+                let message = `已完成 ${subscriptions.length} 个订阅的检测\n\n`;
+                
+                if (results.success.length > 0) {
+                    message += `✅ 成功: ${results.success.length} 个\n`;
+                }
+                
+                if (results.failed.length > 0) {
+                    message += `\n❌ Cookie 过期: ${results.failed.length} 个\n`;
+                    results.failed.forEach(item => {
+                        message += `  • #${item.order} ${item.name}\n`;
+                    });
+                    message += `\n请前往设置页面更新这些订阅的 Cookie`;
+                }
+                
+                const notificationType = results.failed.length > 0 ? 'warning' : 'success';
+                showNotification('检测完成', message, notificationType);
+                return;
+            }
+            
+            const sub = subscriptions[index];
+            console.log(`检测订阅 ${index + 1}/${subscriptions.length}: ${sub.name}`);
+            
+            // 检测当前订阅
+            fetch(`/api/subscriptions/${sub.id}/check`, {
+                method: 'POST'
+            })
+            .then(response => {
+                // 先检查 HTTP 状态码
+                if (response.status === 400) {
+                    // Cookie 过期或认证失败
+                    results.failed.push({
+                        order: sub.order || index + 1,
+                        name: sub.name
+                    });
+                    // 继续检测下一个
+                    setTimeout(() => {
+                        checkSubscriptionsSequentially(subscriptions, index + 1, btn, originalText, icon, results);
+                    }, 500);
+                    return Promise.resolve(); // 返回一个已解决的 Promise
+                } else {
+                    return response.json().then(result => {
+                        if (result.success) {
+                            results.success.push({
+                                order: sub.order || index + 1,
+                                name: sub.name
+                            });
+                        } else {
+                            results.failed.push({
+                                order: sub.order || index + 1,
+                                name: sub.name
+                            });
+                        }
+                        // 继续检测下一个
+                        setTimeout(() => {
+                            checkSubscriptionsSequentially(subscriptions, index + 1, btn, originalText, icon, results);
+                        }, 500);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error(`检测订阅 ${sub.name} 失败:`, error);
+                // 网络错误或 JSON 解析错误，很可能是 Cookie 过期
+                results.failed.push({
+                    order: sub.order || index + 1,
+                    name: sub.name
+                });
+                // 即使失败也继续检测下一个
+                setTimeout(() => {
+                    checkSubscriptionsSequentially(subscriptions, index + 1, btn, originalText, icon, results);
+                }, 500);
+            });
+        }
+        
+        // 显示通知模态框
+        function showNotification(title, message, type = 'info') {
+            const modal = new bootstrap.Modal(document.getElementById('notificationModal'));
+            const header = document.getElementById('notificationHeader');
+            const titleEl = document.getElementById('notificationTitle');
+            const body = document.getElementById('notificationBody');
+            
+            // 设置标题
+            titleEl.textContent = title;
+            
+            // 设置样式
+            header.className = 'modal-header';
+            if (type === 'success') {
+                header.classList.add('bg-success', 'text-white');
+                titleEl.innerHTML = '✅ ' + title;
+            } else if (type === 'danger' || type === 'error') {
+                header.classList.add('bg-danger', 'text-white');
+                titleEl.innerHTML = '❌ ' + title;
+            } else if (type === 'warning') {
+                header.classList.add('bg-warning');
+                titleEl.innerHTML = '⚠️ ' + title;
+            } else {
+                header.classList.add('bg-info', 'text-white');
+                titleEl.innerHTML = 'ℹ️ ' + title;
+            }
+            
+            // 设置内容
+            body.innerHTML = message.replace(/\n/g, '<br>');
+            
+            modal.show();
         }
 
         // 创建用户相关函数
@@ -684,12 +868,12 @@
             const password = document.getElementById('userPassword').value.trim();
 
             if (!subscriptionId) {
-                alert('请选择订阅');
+                showNotification('提示', '请选择订阅', 'warning');
                 return;
             }
 
             if (!username) {
-                alert('请输入用户名');
+                showNotification('提示', '请输入用户名', 'warning');
                 return;
             }
 
@@ -733,13 +917,13 @@
                         userResultModal.show();
                     }, 300);
                 } else {
-                    alert(`❌ 创建失败\n\n${result.error}`);
+                    showNotification('创建失败', result.error, 'danger');
                 }
             })
             .catch(error => {
                 btn.disabled = false;
                 btn.innerHTML = originalText;
-                alert(`❌ 创建失败\n\n${error.message}`);
+                showNotification('创建失败', error.message, 'danger');
             });
         }
 
@@ -755,7 +939,7 @@
             }
             
             if (!currentSubscriptionId) {
-                alert('无法获取订阅信息');
+                showNotification('错误', '无法获取订阅信息', 'danger');
                 return;
             }
             

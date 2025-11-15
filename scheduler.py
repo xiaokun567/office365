@@ -13,16 +13,19 @@ class TaskScheduler:
     
     def start(self):
         """启动定时任务"""
-        # 每24小时执行一次检测
+        # 获取检测间隔
+        check_interval = self.config_manager.get_check_interval_hours()
+        
+        # 按配置的间隔执行检测
         self.scheduler.add_job(
             self.run_daily_check,
             'interval',
-            hours=24,
-            id='daily_check',
-            name='每日订阅检测'
+            hours=check_interval,
+            id='subscription_check',
+            name=f'订阅检测（每{check_interval}小时）'
         )
         self.scheduler.start()
-        print(f"定时任务已启动，将每24小时执行一次检测")
+        print(f"定时任务已启动，将每{check_interval}小时执行一次检测")
     
     def stop(self):
         """停止定时任务"""
@@ -46,12 +49,23 @@ class TaskScheduler:
             if not result['success']:
                 # 检测失败，发送通知
                 error_type = result.get('error', '')
+                error_message = result.get('message', '未知错误')
                 
                 if error_type == 'auth_failure':
                     print(f"  ❌ 认证失败")
                     self.notifier.notify_auth_failure(sub['name'])
+                elif error_type == 'network_error':
+                    print(f"  ❌ 网络错误: {error_message}")
+                    # 网络错误通常是 Cookie 过期导致的 JSON 解析失败
+                    self.notifier.notify_auth_failure(sub['name'])
+                elif error_type == 'timeout':
+                    print(f"  ❌ 请求超时")
+                    # 超时也可能是认证问题
+                    self.notifier.notify_auth_failure(sub['name'])
                 else:
-                    print(f"  ❌ 检测失败: {result.get('message', '')}")
+                    print(f"  ❌ 检测失败: {error_message}")
+                    # 其他错误也发送通知
+                    self.notifier.notify_auth_failure(sub['name'])
             else:
                 # 检测成功
                 status = result.get('status', '')
